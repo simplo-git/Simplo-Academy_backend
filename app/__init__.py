@@ -4,6 +4,8 @@ from app.src.routes.user_routes import user_bp
 from app.src.routes.role_routes import role_bp
 from app.src.routes.certificate_routes import certificate_bp
 from app.src.routes.activity_template_routes import activity_template_bp
+from app.src.routes.conteudo_routes import conteudo_bp
+from app.src.routes.document_routes import document_bp
 from flask_cors import CORS
 
 def create_app():
@@ -17,6 +19,8 @@ def create_app():
     app.register_blueprint(role_bp, url_prefix='/api')
     app.register_blueprint(certificate_bp, url_prefix='/api')
     app.register_blueprint(activity_template_bp, url_prefix='/api')
+    app.register_blueprint(conteudo_bp, url_prefix='/api')
+    app.register_blueprint(document_bp, url_prefix='/api')
 
     return app
 

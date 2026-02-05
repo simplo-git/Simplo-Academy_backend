@@ -159,17 +159,12 @@ def create_video_template_with_upload():
         if not data:
             return jsonify({"status": "error", "message": "Nenhum dado enviado"}), 400
 
-        # Verifica se existe a estrutura 'dados' e 'arquivo'
+        # Verifica e processa o arquivo na estrutura 'dados'
         dados = data.get('dados', {})
         base64_file = dados.get('arquivo')
         filename = dados.get('nomeArquivo')
         
-        # O user mencionou 'tipo' no root e também 'tipoArquivo' em dados.
-        # Vamos usar 'video' como padrão se não especificado, já que a rota é para isso.
-        
         if base64_file and filename:
-            # Determinar tipo para pasta (usando 'video' conforme solicitado para essa rota)
-            # ou tentar inferir do tipoArquivo se disponível
             tipo_arquivo_mime = dados.get('tipoArquivo', '')
             tipo_save = 'video'
             if 'pdf' in tipo_arquivo_mime or 'document' in tipo_arquivo_mime:
@@ -189,84 +184,173 @@ def create_video_template_with_upload():
             if upload_response['status'] == 'success':
                 # Atualizar dados com a URL do arquivo
                 dados['url'] = upload_response['url']
-                # Remover o base64 para não salvar no banco
+                # Remover o base64
                 if 'arquivo' in dados:
                     del dados['arquivo']
                 
-                # Se houver campo 'url' na raiz também, atualizar (redundância conforme exemplo do user?)
+                # Se houver campo 'url' na raiz (compatibilidade), atualizar
                 if 'url' in data:
                     data['url'] = upload_response['url']
                 
-                # Atualizar o objeto dados no payload original
                 data['dados'] = dados
             else:
                 return jsonify(upload_response), 400
 
-        # Validar e Salvar no Banco (usando o service existente)
-        # O service espera um formato compatível com ActivityTemplateModel
-        # O exemplo do user tem campos como '_id', 'nome', 'tipo', 'template', etc.
-        # O model espera 'nome', 'tipo', 'template'.
-        
-        # Adaptar estrutura do usuário para o modelo, se necessário.
-        # O modelo ActivityTemplateModel tem: nome, tipo, template, data_criacao
-        # O JSON do usuário tem: nome, tipo, dados, descricao, etc.
-        # Provavelmente 'dados' faz parte do 'template' ou é campos soltos.
-        # Vou assumir que 'dados' deve ser preservado.
-        # Se o service validar estritamente o model, pode falhar se passarmos campos extras.
-        # O model ActivityTemplateModel usa Pydantic. 'template' é Dict[str, Any].
-        # Vamos mover campos extras para dentro de 'template' se não baterem com o model raiz,
-        # OU vamos salvar direto se o service permitir dict.
-        
-        # Observando o create_template original:
-        # template = ActivityTemplateModel(**data)
-        # response = activity_template_service.create_template(template.model_dump())
-        
-        # Vou tentar ajustar a entrada para bater com o Model.
-        # O user passou 'nome', 'tipo'. 'dados' pode ir para dentro de 'template'?
-        # Ou será que o user quer salvar exatamente essa estrutura?
-        # Se eu usar o create_template existente, ele valida com ActivityTemplateModel.
-        # ActivityTemplateModel: nome, tipo, template (dict), data_criacao.
-        
-        # Vamos construir o objeto para o Model
+        # Preparar dados para o ActivityTemplateModel
+        # O model espera: nome, tipo, template (dict)
         model_data = {
-            "nome": data.get("nome", "Novo Template"),
+            "nome": data.get("nome", "Novo Template Vídeo"),
             "tipo": data.get("tipo", "video"),
             "data_criacao": data.get("data_criacao", datetime.now().isoformat()),
-            "template": data  # Enfiamos tudo dentro de template para flexibilidade?
         }
-        
-        # Mas o user forneceu uma estrutura plana similar ao documento.
-        # Talvez 'dados' seja o 'template'.
-        # Vou colocar o payload processado (sem o base64) dentro do campo 'template' do Model,
-        # mantendo 'nome' e 'tipo' no nível raiz do Model.
-        
-        if "template" not in data:
-             # Se não veio campo 'template', assumimos que o resto dos dados COMPÕE o template
-             # Mas cuidado com recursão se eu botar 'data' em 'template'.
-             clean_data = data.copy()
-             if "nome" in clean_data: del clean_data["nome"]
-             if "tipo" in clean_data: del clean_data["tipo"]
-             model_data["template"] = clean_data
-        else:
-             model_data["template"] = data["template"]
 
-        # Se o user enviou 'dados' e eu processei ele, preciso garantir que ele vá para o lugar certo.
-        # No bloco acima, 'data' jã tem 'dados' modificado.
-        # Entao clean_data["dados"] terá a URL.
-        
-        # Instanciar Model
+        # Organizar o conteúdo do template
+        # Se já existe campo 'template', usa-o; caso contrário, data (limpo) vira o template
+        if "template" in data:
+            model_data["template"] = data["template"]
+            # Garante que 'dados' atualizados estejam dentro do template se necessário
+            if "dados" not in model_data["template"] and dados:
+                 model_data["template"]["dados"] = dados
+        else:
+            # Remove campos de metadados para não duplicar dentro de 'template'
+            clean_data = data.copy()
+            clean_data.pop("nome", None)
+            clean_data.pop("tipo", None)
+            clean_data.pop("data_criacao", None)
+            model_data["template"] = clean_data
+
+        # Instanciar e Validar Model
         try:
             activity_template = ActivityTemplateModel(**model_data)
         except Exception as e:
-             # Fallback: se falhar validação, tenta salvar como genérico se o service permitir,
-             # mas o service chama o repo. O repo usa mongo?
-             # Vou tentar usar o service normal.
-             return jsonify({"status": "error", "message": f"Erro de validação Pydantic: {str(e)}"}), 400
+            return jsonify({"status": "error", "message": f"Erro de validação de modelo: {str(e)}"}), 400
 
+        # Salvar no banco via service
         response = activity_template_service.create_template(activity_template.model_dump())
         
         if response["status"] == "success":
             return jsonify(response), 201
+        return jsonify(response), 400
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Erro interno: {str(e)}"}), 500
+
+
+@activity_template_bp.route('/activity-templates/video-upload/<id>', methods=['PUT'])
+def update_video_template_with_upload(id):
+    """
+    Atualizar template de atividade (vídeo/documento) com suporte a substituição de arquivo.
+    
+    Aceita requisição PUT contendo metadados e opcionalmente um novo arquivo Base64 em 'dados.arquivo'.
+    Se um novo arquivo for enviado:
+    1. Upload do novo arquivo.
+    2. Exclusão do arquivo antigo (se existir e for local).
+    3. Atualização da URL.
+    4. Remoção do Base64 do payload antes de salvar.
+    """
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"status": "error", "message": "Nenhum dado enviado"}), 400
+
+        # 1. Buscar template existente
+        existing_template = activity_template_service.get_template_by_id(id)
+        if not existing_template:
+             return jsonify({"status": "error", "message": "Template não encontrado"}), 404
+
+        # 2. Verificar novo arquivo
+        dados = data.get('dados', {})
+        base64_file = dados.get('arquivo')
+        filename = dados.get('nomeArquivo')
+        
+        # Recuperar URL antiga para possível exclusão
+        old_url = None
+        if "template" in existing_template and "dados" in existing_template["template"]:
+             old_url = existing_template["template"]["dados"].get("url")
+        elif "template" in existing_template and isinstance(existing_template["template"], dict):
+             # Fallback se a estrutura for plana dentro de template
+             old_url = existing_template["template"].get("url")
+
+        if base64_file and filename:
+            tipo_arquivo_mime = dados.get('tipoArquivo', '')
+            tipo_save = 'video'
+            if 'pdf' in tipo_arquivo_mime or 'document' in tipo_arquivo_mime:
+                tipo_save = 'documento'
+            
+            host_url = request.host_url.rstrip('/')
+            
+            # Upload do novo arquivo
+            upload_response = file_upload_service.save_file_from_base64(
+                base64_file, 
+                filename, 
+                tipo_save, 
+                host_url
+            )
+            
+            if upload_response['status'] == 'success':
+                new_url = upload_response['url']
+                dados['url'] = new_url
+                
+                # Remover base64
+                if 'arquivo' in dados: del dados['arquivo']
+                if 'url' in data: data['url'] = new_url
+                data['dados'] = dados
+
+                # Tentar excluir arquivo antigo se diferente
+                if old_url and old_url != new_url and "/api/files/" in old_url:
+                    try:
+                        parts = old_url.split("/api/files/")
+                        if len(parts) > 1:
+                            path_parts = parts[1].split("/")
+                            if len(path_parts) >= 2:
+                                file_upload_service.delete_file(path_parts[0], path_parts[1])
+                    except Exception as ex:
+                        print(f"Erro ao deletar arquivo antigo: {ex}")
+            else:
+                 return jsonify(upload_response), 400
+        else:
+            # Se não enviou arquivo novo, mantém a URL antiga nos dados se não vier no payload
+            # (Geralmente o frontend manda o objeto completo, então a URL antiga já deve estar lá,
+            # mas por garantia verificamos)
+            if 'url' not in dados and old_url:
+                dados['url'] = old_url
+                data['dados'] = dados
+
+        # 3. Preparar dados para atualização
+        # A lógica de update do service espera um dict que será feito merge ($set)
+        # Precisamos garantir que a estrutura respeite o model ou o que o banco espera.
+        
+        # Se structure for aninhada (padrão 'template'):
+        if "template" in existing_template:
+            # Atualizamos o campo 'template'
+            update_data = {"template": data.get("template", {})}
+            
+            # Se o payload veio plano com 'dados', 'nome', etc (comum no frontend),
+            # precisamos remontar o 'template'.
+            # Se 'dados' foi modificado acima, precisamos injetá-lo.
+            
+            if "dados" in data:
+                 if "template" not in update_data: update_data["template"] = {}
+                 # Se update_data["template"] já veio do data["template"], check se dados tá lá
+                 if "dados" not in update_data["template"]:
+                      update_data["template"]["dados"] = data["dados"]
+                 else:
+                      # Se já tem, atualiza
+                      update_data["template"]["dados"] = data["dados"]
+            
+            # Atualizar campos raiz também
+            if "nome" in data: update_data["nome"] = data["nome"]
+            if "tipo" in data: update_data["tipo"] = data["tipo"]
+            
+        else:
+            # Se o base for diferente (legado?), salvamos data direto
+            update_data = data
+
+        # Chamar service
+        response = activity_template_service.update_template(id, update_data)
+        
+        if response["status"] == "success":
+            return jsonify(response), 200
         return jsonify(response), 400
 
     except Exception as e:

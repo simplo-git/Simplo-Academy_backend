@@ -11,6 +11,10 @@ class ActivityType(str, Enum):
     DOCUMENTO = "documento"
     ARTIGO = "artigo"
 
+class DocumentUploadModel(BaseModel):
+    file: str = Field(..., description="Arquivo em Base64")
+    filename: str = Field(..., description="Nome do arquivo")
+
 class ActivityTemplateModel(BaseModel):
     nome: str = Field(..., description="Nome do template de atividade")
     tipo: ActivityType = Field(..., description="Tipo da atividade")
