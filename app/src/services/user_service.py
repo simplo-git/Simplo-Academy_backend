@@ -1,5 +1,6 @@
 from bson.objectid import ObjectId
 from app.src.services.db_service import DBService
+from app.src.services.cascade_delete_service import cascade_delete_service
 from app.src.models.user_model import UserModel
 from app.src.services.auth_service import AuthService
 import os
@@ -62,6 +63,8 @@ class UserService:
         try:
             result = self.collection.delete_one({"_id": ObjectId(user_id)})
             if result.deleted_count > 0:
+                # Cascade: remove referencias em outros documentos
+                cascade_delete_service.on_user_deleted(user_id)
                 return {"status": "success", "message": "Usuário deletado"}
             return {"status": "error", "message": "Usuário não encontrado"}
         except:

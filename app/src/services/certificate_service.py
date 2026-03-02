@@ -1,5 +1,6 @@
 from bson.objectid import ObjectId
 from app.src.services.db_service import DBService
+from app.src.services.cascade_delete_service import cascade_delete_service
 from app.src.models.certificate_model import CertificateModel
 import os
 from dotenv import load_dotenv
@@ -35,6 +36,8 @@ class CertificateService:
         try:
             result = self.collection.delete_one({"_id": ObjectId(certificate_id)})
             if result.deleted_count > 0:
+                # Cascade: remove referencias em outros documentos
+                cascade_delete_service.on_certificate_deleted(certificate_id)
                 return {"status": "success", "message": "Certificado excluído com sucesso"}
             return {"status": "error", "message": "Certificado não encontrado"}
         except Exception as e:

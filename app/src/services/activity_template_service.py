@@ -1,6 +1,7 @@
 from bson.objectid import ObjectId
 from app.src.services.db_service import DBService
 from app.src.services.file_upload_service import FileUploadService
+from app.src.services.cascade_delete_service import cascade_delete_service
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -71,6 +72,8 @@ class ActivityTemplateService:
             # Excluir do banco
             result = self.collection.delete_one({"_id": ObjectId(template_id)})
             if result.deleted_count > 0:
+                # Cascade: remove referencias em outros documentos
+                cascade_delete_service.on_template_deleted(template_id)
                 return {"status": "success", "message": "Template excluído com sucesso"}
             return {"status": "error", "message": "Erro ao excluir template do banco"}
         except Exception as e:

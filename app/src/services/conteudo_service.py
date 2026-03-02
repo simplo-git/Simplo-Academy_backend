@@ -1,5 +1,6 @@
 from bson.objectid import ObjectId
 from app.src.services.db_service import DBService
+from app.src.services.cascade_delete_service import cascade_delete_service
 from datetime import datetime
 import os
 from dotenv import load_dotenv
@@ -187,6 +188,8 @@ class ConteudoService:
         try:
             result = self.collection.delete_one({"_id": ObjectId(conteudo_id)})
             if result.deleted_count > 0:
+                # Cascade: remove referencias em outros documentos
+                cascade_delete_service.on_conteudo_deleted(conteudo_id)
                 return {"status": "success", "message": "Conteúdo excluído com sucesso"}
             return {"status": "error", "message": "Erro ao excluir conteúdo do banco"}
         except Exception as e:
@@ -485,8 +488,6 @@ class ConteudoService:
             update_path = f"usuarios.{user_id}"
             
             # Mantém dados existentes, atualiza nota, status e data de conclusão (se aprovado)
-            # Se reprovado, mantem ou reseta? O user pediu 'fazer novamente', mas isso é reset.
-            # Aqui vamos setar o status e nota.
             
             updates = {
                 f"{update_path}.nota": nota,
@@ -500,6 +501,22 @@ class ConteudoService:
                  # Regra de Mudança de Nível Automática (1 -> 2)
                  if str(conteudo.get("nivel")) == "1":
                      self._promote_user_to_level_2(user_id)
+
+            elif status == "reprovado":
+                 # Se reprovado, removemos o "realizado" e "data_conclusao"? 
+                 # O user pediu para "poder solicitar para o usuario refazer".
+                 # Geralmente 'reprovado' mantém realizado=True (fez mas não passou).
+                 # O botão 'Limpar Tentativa' (frontend) já cuida de resetar tudo.
+                 # Aqui vamos apenas garantir que se ele TINHA certificado, perde.
+                 
+                 # Remove Certificado
+                 try:
+                     self.users_collection.update_one(
+                         {"_id": ObjectId(user_id)},
+                         {"$pull": {"certificados": {"conteudo_id": str(conteudo["_id"])}}}
+                     )
+                 except Exception as e_cert:
+                     print(f"Erro ao remover certificado: {e_cert}")
 
             result = self.collection.update_one(
                 {"_id": ObjectId(conteudo_id)},
