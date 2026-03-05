@@ -36,6 +36,7 @@ class ConteudoModel(BaseModel):
     data_criacao: Optional[str] = Field(default=None, description="Data de criação")
     correcao: CorrectionType = Field(CorrectionType.MANUAL, description="Tipo de correção")
     certificado_id: Optional[str] = Field(None, description="ID do certificado associado")
+    thumbnail: Optional[str] = Field(default='', description="Thumbnail/capa do conteúdo em base64")
 
     class Config:
         populate_by_name = True

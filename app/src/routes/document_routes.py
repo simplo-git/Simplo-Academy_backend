@@ -18,11 +18,11 @@ def document_upload():
         
         host_url = request.host_url.rstrip('/')
         
-        # Força tipo='documento' para salvar em documents
+        # Força tipo='upload' para salvar em documents com exceções estendidas
         response = file_upload_service.save_file_from_base64(
             upload_model.file, 
             upload_model.filename, 
-            'documento', 
+            'upload', 
             host_url
         )
         

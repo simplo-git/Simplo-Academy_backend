@@ -20,6 +20,7 @@ class ActivityTemplateModel(BaseModel):
     tipo: ActivityType = Field(..., description="Tipo da atividade")
     template: Dict[str, Any] = Field(default={}, description="Template cadastrado - estrutura livre para o frontend")
     data_criacao: Optional[str] = Field(default=None, description="Data de criação")
+    setor: Optional[str] = Field(default=None, description="ID do setor a qual este template pertence")
 
     class Config:
         populate_by_name = True

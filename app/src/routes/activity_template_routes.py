@@ -203,6 +203,10 @@ def create_video_template_with_upload():
             "tipo": data.get("tipo", "video"),
             "data_criacao": data.get("data_criacao", datetime.now().isoformat()),
         }
+        
+        # Keep setor if it exists
+        if "setor" in data:
+            model_data["setor"] = data["setor"]
 
         # Organizar o conteúdo do template
         # Se já existe campo 'template', usa-o; caso contrário, data (limpo) vira o template
@@ -217,6 +221,7 @@ def create_video_template_with_upload():
             clean_data.pop("nome", None)
             clean_data.pop("tipo", None)
             clean_data.pop("data_criacao", None)
+            clean_data.pop("setor", None)
             model_data["template"] = clean_data
 
         # Instanciar e Validar Model
